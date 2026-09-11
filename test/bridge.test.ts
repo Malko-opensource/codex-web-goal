@@ -46,6 +46,8 @@ test('native goal -> Web edit -> finish -> seal -> local evidence; never complet
   const { turn } = await startTurn(f.bridge); const lease = turn.token;
   await assert.rejects(f.bridge.mutate(create()), code('LEASE_REQUIRED'));
   await assert.rejects(f.bridge.requestCommand('echo not-allowed'), code('GOAL_EXECUTION'));
+  await f.bridge.workerContext(lease);
+  assert.equal(f.bridge.turnView(turn).progress.work, 'working');
   await f.bridge.mutate({ ...create(), turnToken: lease });
   await f.bridge.workerFinish(lease, 'Implemented addition.');
   await assert.rejects(f.bridge.mutate({ ...create(), turnToken: lease }), code('LEASE_REQUIRED'));
@@ -55,6 +57,9 @@ test('native goal -> Web edit -> finish -> seal -> local evidence; never complet
   await assert.rejects(f.bridge.checkpoint({ revision: sealed.revision, verdict: 'pass', summary: 'No checks', checks: [] }), code('CHECKS_REQUIRED'));
   await f.bridge.checkpoint({ revision: sealed.revision, verdict: 'pass', summary: 'Addition checked', checks: [{ command: 'node math.test.js', exitCode: 0, summary: '2+3=5' }] });
   assert.equal(f.bridge.turn?.status, 'checked'); assert.equal(f.native.thread.goal?.status, 'active');
+  const progress = f.bridge.turnView(turn).progress;
+  assert.equal(progress.delivery, 'answered'); assert.equal(progress.work, 'worker_finished');
+  assert.equal(progress.validation, 'locally_validated'); assert.equal(progress.appliedFiles, 1);
   assert.ok(!JSON.stringify(f.bridge.view()).includes(lease));
 });
 
@@ -93,7 +98,9 @@ test('source drift invalidates local evidence until a new seal and recheck', asy
   await f.bridge.workerFinish(turn.token, 'Done'); await f.bridge.browserEvent({ type: 'answer', turnId: turn.id, response: 'Done' });
   const seal = await f.bridge.seal(); await fs.writeFile(path.join(f.root, 'new.js'), 'changed');
   await assert.rejects(f.bridge.checkpoint({ revision: seal.revision, verdict: 'fail', summary: 'Stale', checks: [] }), code('WORKSPACE_DRIFT'));
+  assert.equal(f.bridge.turnView(f.bridge.turn!).progress.validation, 'stale');
   assert.notEqual((await f.bridge.seal()).revision, seal.revision);
+  assert.equal(f.bridge.turnView(f.bridge.turn!).progress.validation, 'sealed');
 });
 
 test('restart reconciles prepared writes and never dispatches uncertain browser submissions', async t => {
@@ -104,7 +111,7 @@ test('restart reconciles prepared writes and never dispatches uncertain browser 
   await fs.writeFile(path.join(f.root, 'applied.txt'), 'written'); await f.store.save(); f.bridge.close();
   const store = new Store(f.store.directory); await store.open(f.root);
   const recovered = new Bridge(store, f.workspace, f.native); t.after(() => recovered.close()); await recovered.recover();
-  const sent: { type: string }[] = []; recovered.browser = { send: value => sent.push(value as { type: string }), close() {} };
+  const sent: { type: string }[] = []; recovered.conversation = { surface: 'chrome-extension', send: value => sent.push(value as { type: string }), close() {} };
   await recovered.pump(); assert.equal(sent.length, 0);
   await recovered.pump(true); assert.deepEqual(sent.map(x => x.type), ['reconcile']);
   assert.equal(store.state.operations.x!.status, 'applied'); assert.equal(store.state.operations.y!.status, 'uncertain');
@@ -126,4 +133,12 @@ test('late worker_finish can close an answered turn but never reopen file writes
   await assert.rejects(f.bridge.mutate({ ...create(), turnToken: lease }), code('LEASE_REQUIRED'));
   await f.bridge.workerFinish(lease, 'Now closed'); await f.bridge.seal();
   assert.equal(turn.status, 'sealed');
+});
+
+test('bridge reports a UI-neutral conversation surface without changing delivery ownership', async t => {
+  const f = await fixture(); t.after(f.cleanup);
+  f.bridge.conversation = { surface: 'codex-inapp', send() {}, close() {} };
+  const state = f.bridge.view();
+  assert.equal(state.conversationConnected, true); assert.equal(state.conversationSurface, 'codex-inapp');
+  assert.equal(state.browserConnected, true); // compatibility field for existing dashboard/API clients
 });

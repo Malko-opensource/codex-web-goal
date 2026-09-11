@@ -18,7 +18,7 @@ async function body(req: IncomingMessage): Promise<unknown> {
   try { return JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { throw new BridgeError('JSON', 'Invalid JSON.', 400); }
 }
 function bearer(req: IncomingMessage) { return req.headers.authorization?.replace(/^Bearer /, '') ?? ''; }
-const browserEvent = z.object({ type: z.enum(['submitted', 'answer', 'uncertain', 'not_submitted', 'blocked']), turnId: z.string().uuid(), response: z.string().max(150_000).optional(), reason: z.string().max(2000).optional() }).strict();
+const browserEvent = z.object({ type: z.enum(['submitted', 'answer', 'uncertain', 'not_submitted', 'blocked']), turnId: z.string().uuid(), response: z.string().max(150_000).optional(), reason: z.string().max(2000).optional(), generation: z.string().uuid().optional() }).strict();
 const listen = (server: Server, port: number) => new Promise<number>((resolve, reject) => {
   server.once('error', reject); server.listen(port, '127.0.0.1', () => { const address = server.address(); resolve(typeof address === 'object' && address ? address.port : port); });
 });
@@ -67,6 +67,10 @@ export async function serve(bridge: Bridge, options: { mcpPort: number; controlP
           const parsed = z.object({ id: z.string().uuid(), allow: z.boolean() }).strict().parse(input);
           send(res, 200, await bridge.approveCommand(parsed.id, parsed.allow)); return;
         }
+        if (pathname === '/api/capability') {
+          const parsed = z.object({ id: z.string().uuid(), allow: z.boolean() }).strict().parse(input);
+          send(res, 200, await bridge.delegation.decideCapability(parsed.id, parsed.allow)); return;
+        }
         if (pathname === '/api/command-stop') {
           const parsed = z.object({ id: z.string().uuid() }).strict().parse(input); bridge.kill(parsed.id); send(res, 200, { ok: true }); return;
         }
@@ -93,17 +97,17 @@ export async function serve(bridge: Bridge, options: { mcpPort: number; controlP
     let authenticated = false;
     const authTimeout = setTimeout(() => socket.close(1008, 'Authentication required'), 5000);
     socket.on('error', () => {});
-    const connection = { send: (data: unknown) => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data)); }, close: () => socket.close() };
+    const connection = { surface: 'chrome-extension' as const, send: (data: unknown) => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(data)); }, close: () => socket.close() };
     socket.on('message', async bytes => {
       try {
         const message: unknown = JSON.parse(bytes.toString());
         if (!authenticated) {
           const auth = z.object({ type: z.literal('auth'), token: z.string() }).strict().parse(message);
           requireThat(bridge.state.extension && equalSecret(auth.token, bridge.state.extension.secret), 'AUTH', 'Invalid extension token.');
-          authenticated = true; clearTimeout(authTimeout); bridge.browser?.close(); bridge.browser = connection;
+          authenticated = true; clearTimeout(authTimeout); bridge.conversation?.close(); bridge.conversation = connection;
           connection.send({ type: 'ready', chat: bridge.state.chat }); await bridge.pump(true); return;
         }
-        requireThat(bridge.browser === connection, 'STALE_CONNECTION', 'This extension connection was replaced.');
+        requireThat(bridge.conversation === connection, 'STALE_CONNECTION', 'This extension connection was replaced.');
         const kind = (message as { type?: string }).type;
         if (kind === 'heartbeat') { connection.send({ type: 'heartbeat' }); return; }
         if (kind === 'bind') {
@@ -113,7 +117,7 @@ export async function serve(bridge: Bridge, options: { mcpPort: number; controlP
         await bridge.browserEvent(browserEvent.parse(message) as BrowserEvent);
       } catch (error) { connection.send({ type: 'error', ...errorInfo(error) }); if (!authenticated) socket.close(1008); }
     });
-    socket.on('close', () => { clearTimeout(authTimeout); if (bridge.browser === connection) bridge.browser = undefined; });
+    socket.on('close', () => { clearTimeout(authTimeout); if (bridge.conversation === connection) bridge.conversation = undefined; });
   });
   const mcpPort = await listen(publicServer, options.mcpPort);
   try { controlPort = await listen(privateServer, options.controlPort); }

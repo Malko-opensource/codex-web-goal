@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { ContextEnvelope, FrozenPolicy, HostLease, ExecutionRun, WakeEvent, RequestOrigin, DelegationResult, LocalAssistance, CapabilityCall } from './execution-contract.js';
 
 export const VERSION = '0.1.1';
 export const PORTS = { mcp: 43120, control: 43121, codex: 43122 };
@@ -33,17 +34,27 @@ export type NativeGoal = {
 };
 export type NativeBinding = { threadId: string; fingerprint: string; objective: string };
 export const goalFingerprint = (goal: NativeGoal) => hash(`${goal.threadId}:${goal.createdAt}:${goal.objective}`);
-export type TurnStatus = 'queued' | 'dispatching' | 'submitted' | 'answered' | 'uncertain' | 'blocked' | 'sealed' | 'checked' | 'cancelled';
+export type TurnStatus = 'queued' | 'dispatching' | 'submitted' | 'answered' | 'uncertain' | 'blocked' | 'sealed' | 'checked' | 'handed_off' | 'cancelled';
+export type TurnMilestones = {
+  dispatchedAt?: number; submittedAt?: number; workerStartedAt?: number; workerFinishedAt?: number;
+  answeredAt?: number; sealedAt?: number; validatedAt?: number;
+};
 export type Turn = {
   id: string; requestId: string; requestHash: string; sessionId: string; sequence: number;
   marker: string; prompt: string; token: string; phase: 'plan' | 'code'; allowDelete: boolean;
   status: TurnStatus; createdAt: number; response?: string; reason?: string; workerFinished?: boolean; workerReport?: string;
+  milestones?: TurnMilestones; validationState?: 'stale';
+  contextEnvelope?: ContextEnvelope; contextAcknowledged?: number; hostLease?: HostLease;
+  executionBlocked?: string; verifiedRunId?: string; responseObserved?: boolean;
+  result?: DelegationResult;
   revision?: string; checkpoint?: { verdict: 'pass' | 'fail' | 'blocked'; summary: string; checks: Check[]; at: number };
 };
 export type Check = { command: string; exitCode: number | null; summary: string };
 export type Session = {
-  id: string; binding: NativeBinding; mode: 'plan' | 'goal'; status: 'active' | 'paused' | 'closed';
+  id: string; binding: NativeBinding; mode: 'plan' | 'goal' | 'task'; status: 'active' | 'paused' | 'closed';
+  origin?: RequestOrigin;
   createdAt: number; reason?: string; turnIds: string[];
+  executionPolicy?: FrozenPolicy;
 };
 export type Operation = {
   id: string; requestHash: string; path: string; before: string; after: string;
@@ -54,11 +65,13 @@ export type Job = {
   createdAt: number; exitCode?: number | null; output: string; timeoutMs: number;
 };
 export type State = {
-  version: 1; workspace: string; mcpToken: string; controlToken: string;
+  version: 3; workspace: string; mcpToken: string; controlToken: string;
   extension?: { id: string; secret: string };
-  chat?: { url: string; tabId: number }; activeSession?: string;
+  chat?: { url: string; tabId: number; generation?: string }; activeSession?: string;
   sessions: Record<string, Session>; turns: Record<string, Turn>; operations: Record<string, Operation>;
   jobs: Record<string, Job>; events: { at: number; kind: string; detail: string }[];
+  runs: Record<string, ExecutionRun>; wakeEvents: Record<string, WakeEvent>;
+  localAssists: Record<string, LocalAssistance>; capabilityCalls: Record<string, CapabilityCall>;
 };
 export function chatUrl(value: string): string {
   const url = new URL(value);

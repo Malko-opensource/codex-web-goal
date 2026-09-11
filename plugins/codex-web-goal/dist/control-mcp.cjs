@@ -1061,10 +1061,10 @@ var require_util = __commonJS({
     var codegen_1 = require_codegen();
     var code_1 = require_code();
     function toHash(arr) {
-      const hash2 = {};
+      const hash3 = {};
       for (const item of arr)
-        hash2[item] = true;
-      return hash2;
+        hash3[item] = true;
+      return hash3;
     }
     exports2.toHash = toHash;
     function alwaysValidSchema(it, schema) {
@@ -36499,9 +36499,48 @@ var BridgeError = class extends Error {
   code;
   http;
 };
+function requireThat(condition, code, message, http = 409) {
+  if (!condition) throw new BridgeError(code, message, http);
+}
 function errorInfo(error62) {
   return error62 instanceof BridgeError ? { code: error62.code, message: error62.message } : { code: "INTERNAL", message: error62 instanceof Error ? error62.message : String(error62) };
 }
+
+// src/execution-contract.ts
+var relativePath = external_exports.string().min(1).max(2e3).refine((p) => !p.startsWith("/") && !p.includes("\\") && !p.split("/").includes("..") && !p.includes("\0"), "Use a relative workspace path");
+var commandSchema = external_exports.object({
+  argv: external_exports.array(external_exports.string().min(1).max(12e3)).min(1).max(100),
+  cwd: relativePath.default("."),
+  localServices: external_exports.number().int().min(0).max(4).optional()
+}).strict();
+var executionPolicySchema = external_exports.object({
+  mode: external_exports.literal("web-controlled"),
+  network: external_exports.literal("public-internet"),
+  allowDelete: external_exports.boolean().default(false),
+  commandTimeoutMs: external_exports.number().int().min(1e3).max(36e5).default(6e5),
+  totalRuntimeMs: external_exports.number().int().min(1e3).max(864e5).default(18e5),
+  verificationLimit: external_exports.number().int().min(1).max(100).default(5),
+  resultKind: external_exports.enum(["verified-files", "files", "answer"]).default("verified-files"),
+  maxLocalAssists: external_exports.number().int().min(0).max(20).default(3),
+  checks: external_exports.array(commandSchema.extend({ id: external_exports.string().min(1).max(100) })).max(40).default([]),
+  protectedFiles: external_exports.array(relativePath).max(200).default([]),
+  expectedFiles: external_exports.array(relativePath).max(1e3).default([])
+}).strict().superRefine((p, ctx) => {
+  if (new Set(p.checks.map((c) => c.id)).size !== p.checks.length) ctx.addIssue({ code: "custom", message: "Check IDs must be unique" });
+  if (p.resultKind === "verified-files" && (!p.checks.length || !p.protectedFiles.length || !p.expectedFiles.length)) ctx.addIssue({ code: "custom", message: "Verified files require checks, protected checkers and expected files" });
+  if (p.resultKind === "files" && !p.expectedFiles.length) ctx.addIssue({ code: "custom", message: "File results require expected files" });
+  if (p.resultKind !== "verified-files" && p.checks.length) ctx.addIssue({ code: "custom", message: "Required checks must use verified-files; do not silently skip them" });
+});
+var contextDetailsSchema = external_exports.object({
+  constraints: external_exports.array(external_exports.string().min(1).max(5e3)).max(100).default([]),
+  instructions: external_exports.array(external_exports.object({ text: external_exports.string().min(1).max(2e4), source: external_exports.string().min(1).max(2e3) }).strict()).max(100).default([]),
+  decisions: external_exports.array(external_exports.string().max(5e3)).max(100).default([]),
+  openQuestions: external_exports.array(external_exports.string().max(5e3)).max(100).default([]),
+  references: external_exports.array(external_exports.object({ path: relativePath, sha256: external_exports.string().regex(/^[a-f0-9]{64}$/) }).strict()).max(200).default([]),
+  historyOmitted: external_exports.boolean().default(true),
+  resourceIds: external_exports.array(external_exports.string().regex(/^[a-zA-Z0-9_-]{1,100}$/)).max(100).default([]),
+  capabilityIds: external_exports.array(external_exports.string().regex(/^[a-zA-Z0-9_-]{1,100}$/)).max(40).default([])
+}).strict();
 
 // src/tools.ts
 function tool(name, description, shape, readOnly, handler) {
@@ -36510,17 +36549,70 @@ function tool(name, description, shape, readOnly, handler) {
 }
 var str = () => external_exports.string().min(1).max(2e3);
 var turnToken = external_exports.string().max(100).optional();
-var mutation = { operation_id: external_exports.string().uuid(), path: str(), expected_sha256: external_exports.string().regex(/^(absent|[a-f0-9]{64})$/), turn_token: turnToken };
+var versions = { context_version: external_exports.number().int().positive().optional(), policy_version: external_exports.number().int().positive().optional() };
+var mutation = { operation_id: external_exports.string().uuid(), path: str(), expected_sha256: external_exports.string().regex(/^(absent|[a-f0-9]{64})$/), turn_token: turnToken, ...versions };
 function controlTools(bridge) {
   return [
+    tool(
+      "delegation_open",
+      "Open a shared Web delegation for an ordinary request or an active Goal. Ordinary requests need no Goal or mode switch. Host support is mandatory; this tool does not implement the host scheduler.",
+      { kind: external_exports.enum(["request", "goal"]), thread_id: str().optional(), origin_request_id: str().optional(), input_version: external_exports.number().int().positive().optional(), objective: external_exports.string().min(1).max(8e3).optional(), policy: executionPolicySchema },
+      false,
+      ({ kind, thread_id, origin_request_id, input_version, objective, policy }) => {
+        if (kind === "request") requireThat(origin_request_id && input_version && objective, "REQUEST_ORIGIN", "Provide origin_request_id, input_version and objective.");
+        return bridge.open(kind === "request" ? "task" : "goal", thread_id, policy, kind === "request" ? { requestId: origin_request_id, inputVersion: input_version, objective } : void 0);
+      }
+    ),
+    tool("delegation_catalog", "List descriptions and digests of explicitly configured resources and capabilities, not all installed plugins. Select IDs in the dispatch context.", {}, true, () => bridge.delegation.resources.list()),
+    tool(
+      "delegation_dispatch",
+      "Delegate one task using the shared lifecycle. No automatic Goal creation. Preserve required instructions; select only relevant resourceIds and capabilityIds.",
+      { request_id: str(), task: external_exports.string().min(1).max(35e3), context: external_exports.string().max(15e3).default(""), criteria: external_exports.string().min(1).max(5e3), allow_delete: external_exports.boolean().default(false), context_details: contextDetailsSchema.optional() },
+      false,
+      ({ request_id, allow_delete, context_details, ...rest }) => bridge.dispatch({ ...rest, requestId: request_id, allowDelete: allow_delete, contextDetails: context_details })
+    ),
+    tool("delegation_status", "Compact state for the shared delegation; program/host owns normal waiting. Unknown usage is not zero.", {}, true, () => bridge.compactView()),
+    tool(
+      "delegation_result",
+      "Retrieve a stored delegation result by turn ID. Does not wake a model or repeat a Web request. The origin retains semantic acceptance.",
+      { turn_id: external_exports.string().uuid() },
+      true,
+      async ({ turn_id }) => {
+        const turn = bridge.state.turns[turn_id];
+        requireThat(turn, "TURN_MISSING", "Unknown delegation.");
+        return { turn_id, status: turn.status, result: turn.result, stale: turn.validationState === "stale" || Boolean(turn.revision && turn.revision !== await bridge.workspace.revision()), returnEvents: Object.values(bridge.state.wakeEvents).filter((e) => e.binding.turnId === turn_id).map((e) => ({ id: e.id, kind: e.kind, status: e.status })) };
+      }
+    ),
+    tool("delegation_control", "Pause/resume/cancel/close this delegation, never the originating Goal. Old grants do not revive.", { action: external_exports.enum(["pause", "resume", "cancel", "close"]) }, false, ({ action }) => bridge.control(action)),
+    tool(
+      "delegation_assistance_result",
+      "Return the result of requested local work. Does not restore Web permissions: review, resume, then dispatch a fresh context. Late origin results are rejected.",
+      { assistance_id: external_exports.string().uuid(), outcome: external_exports.enum(["resolved", "declined"]), summary: external_exports.string().min(1).max(8e3) },
+      false,
+      ({ assistance_id, outcome, summary }) => bridge.delegation.resolveLocal(assistance_id, outcome, summary)
+    ),
     tool("web_goal_status", "Read bridge state, Web results, local checkpoints and connection status. No goal mutation.", {}, true, () => bridge.view()),
+    tool("web_goal_snapshot", "Read compact actionable status without full conversation or logs. Host, not the model, owns external waiting.", {}, true, () => bridge.compactView()),
+    tool("web_goal_diagnostics", "Probe configured host and runner capabilities without model calls. Does not claim real-host zero-model acceptance or public tunnel reachability.", {}, true, () => bridge.execution.diagnostics()),
     tool("web_goal_threads", "List loaded native Codex threads in the selected workspace. Use the matching ID when opening a session.", {}, true, () => bridge.native.candidates(bridge.workspace.root)),
     tool(
       "web_goal_open",
-      "Bind to a real loaded Codex thread. Goal mode requires an active native /goal; plan mode never grants file writes.",
-      { mode: external_exports.enum(["plan", "goal"]), thread_id: str().optional() },
+      "Bind to a real native Goal. Optional web-controlled execution requires configured host wait integration and isolated runner. Existing sessions cannot silently change policy.",
+      { mode: external_exports.enum(["plan", "goal"]), thread_id: str().optional(), execution_policy: executionPolicySchema.optional() },
       false,
-      ({ mode, thread_id }) => bridge.open(mode, thread_id)
+      ({ mode, thread_id, execution_policy }) => bridge.open(mode, thread_id, execution_policy)
+    ),
+    tool(
+      "web_goal_invalidate_context",
+      "Stop the current delegation when user instructions/context change. Revokes grants and queued wakes; resume then dispatch a new explicit context. Does not replace native Goal.",
+      { reason: external_exports.string().min(1).max(2e3) },
+      false,
+      async ({ reason }) => {
+        const result = await bridge.control("pause");
+        bridge.store.event("context_invalidated", bridge.execution.redact(reason));
+        await bridge.store.save();
+        return result;
+      }
     ),
     tool(
       "web_goal_control",
@@ -36534,8 +36626,9 @@ function controlTools(bridge) {
       task: external_exports.string().min(1).max(35e3),
       context: external_exports.string().max(15e3).default(""),
       criteria: external_exports.string().min(1).max(5e3),
-      allow_delete: external_exports.boolean().default(false)
-    }, false, ({ request_id, allow_delete, ...rest }) => bridge.dispatch({ ...rest, requestId: request_id, allowDelete: allow_delete })),
+      allow_delete: external_exports.boolean().default(false),
+      context_details: contextDetailsSchema.optional()
+    }, false, ({ request_id, allow_delete, context_details, ...rest }) => bridge.dispatch({ ...rest, requestId: request_id, allowDelete: allow_delete, contextDetails: context_details })),
     tool(
       "web_goal_wait",
       "Wait up to 30 seconds for the named Web turn. Return a confirmed response or actionable status; never create another request because a wait timed out.",
@@ -36561,6 +36654,10 @@ function mcpServer(specs, label) {
   }, async (input2) => {
     try {
       const result = await spec.execute(input2);
+      if (spec.resourceContent && result && typeof result === "object" && "image" in result && "mime" in result) {
+        const { image, mime, ...metadata } = result;
+        return { content: [{ type: "text", text: JSON.stringify(metadata) }, { type: "image", data: image, mimeType: mime }] };
+      }
       return { content: [{ type: "text", text: JSON.stringify(result) }] };
     } catch (error62) {
       return { isError: true, content: [{ type: "text", text: JSON.stringify(errorInfo(error62)) }] };

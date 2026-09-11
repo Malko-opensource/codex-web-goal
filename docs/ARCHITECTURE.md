@@ -2,11 +2,20 @@
 
 ## Ownership
 
+The default below remains local-supervised. The optional [web-controlled protocol](web-goal/web-controlled-execution.md)
+adds ContextEnvelope, frozen execution policy, a Mac runner and a private host-wait adapter. The native adapter
+stays read-only. A real scheduler hook remains an integration dependency; longer waits or skill instructions
+alone cannot implement zero-model waiting.
+
+Authority is per state, not global: the bridge is authoritative for Web delivery, grants and evidence;
+Native Codex is authoritative for the objective; the workspace is authoritative for current file bytes.
+`connected`, chat `bound`, message `submitted`, worker progress, file effects and local validation are distinct facts.
+
 | Owner | Authoritative state | Allowed effects |
 | --- | --- | --- |
 | Native Codex | Objective, Goal budget/status/completion, local approvals | Execute tests, inspect changes, decide next task and Git operations |
 | Bridge | Session binding, delivery journal, file operations, leases, checkpoints | Grant/revoke a single Web turn; apply bounded workspace changes |
-| Chrome extension | Selected rendered conversation, durable send-attempt journal | Submit visible text and observe rendered responses |
+| Conversation surface adapter (current: Chrome extension) | Selected rendered conversation, durable send-attempt journal | Submit visible text and observe rendered responses |
 | ChatGPT Web | Design and implementation proposals | Read/write through the workspace MCP; finish its own work |
 
 The bridge reads native `thread/read`, `thread/loaded/list`, `thread/goal/get` over a loopback App Server connection.
@@ -21,10 +30,14 @@ The bridge enforces file/command capabilities, but cannot force Codex to delegat
 ## One work cycle
 
 ```text
-queued → dispatching → submitted → answered → sealed → checked
-             ↘ uncertain / blocked ↗                ↓
-                 reconcile only                 next turn
+delivery: queued → dispatching → submitted → answered
+                      ↘ uncertain / blocked ↗
+worker:   not_started → working → worker_finished
+verify:   not_started → sealed → locally_validated / failed / blocked
 ```
+
+The compatibility `turn.status` keeps the delivery/seal/checkpoint lifecycle. The status view also exposes
+independent delivery, worker and validation progress plus applied-file count. Applied-file count is not read-back proof.
 
 `request_id` is stable across a retry; changed content under the same ID is rejected.
 The local supervisor supplies one task, relevant checkpoint context, acceptance criteria and an optional deletion grant.
@@ -40,7 +53,12 @@ External dependencies, ignored files and configuration may change without changi
 
 ## Persistence and recovery
 
-State is an atomically replaced, fsynced JSON snapshot in a private directory. File mutation intents are saved before effects.
+State v3 is an atomically replaced, fsynced JSON snapshot in a private directory. Versions 1 and 2 are backed up before migration;
+legacy sessions are not switched to web-controlled mode. File mutation intents are saved before effects.
+
+The [shared delegation layer](web-goal/shared-delegation.md) separates ordinary request origins from native Goals.
+DelegationRuntime owns common context/evidence/wake contracts; DelegationSupport owns selected resources, approved MCP
+calls and bounded local assistance. Host return and zero-model waiting still require an actual scheduler integration.
 Each mutation has an operation ID, expected old SHA, intended new SHA, optional backup and status.
 After restart a prepared operation is marked applied only if its intended result is present; otherwise it remains uncertain.
 No cross-file transaction is claimed. Partial multi-file changes remain inspectable and require local reconciliation.
@@ -57,6 +75,7 @@ An existing composer draft is preserved. User messages are not transformed into 
 
 ## Physical layout
 
+- `src/conversation.ts`: UI-neutral conversation-surface port. The current adapter is Chrome; an in-app adapter needs a stable host API.
 - `src/bridge.ts`: orchestration and durable lifecycle.
 - `src/workspace.ts`: text tools and source revision.
 - `src/codex.ts`: read-only native protocol adapter.
@@ -69,3 +88,6 @@ An existing composer draft is preserved. User messages are not transformed into 
 TypeScript is shared across the process boundaries; Zod validates tool inputs. HTTP and WebSocket messages are bounded.
 The browser DOM adapter is intentionally isolated: a ChatGPT UI change should require updating one module and its fixtures.
 No private backend reverse engineering, session-token proxy or model API emulation is involved.
+
+The Korean [operational architecture set](web-goal/README.md) records live-account observations, the expanded
+state/trust model, reconciliation rules, tab lifecycle, security boundary and troubleshooting matrix.

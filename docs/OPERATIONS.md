@@ -1,5 +1,11 @@
 # Operations and troubleshooting
 
+For opt-in web-controlled execution, see [host integration and runner configuration](web-goal/web-controlled-execution.md).
+The default remains local-supervised. Missing host scheduler support is a blocker, not a reason to poll the model.
+
+For the expanded preflight, completion gate and incident procedures, see the Korean
+[operations runbook](web-goal/operations-runbook.md) and [troubleshooting matrix](web-goal/troubleshooting.md).
+
 ## Common states
 
 | State / error | Meaning | Local action |
@@ -17,6 +23,10 @@
 | `NATIVE_GOAL` | Goal paused/replaced/complete or wrong binding | Check native Goal; close/rebind for a genuinely new goal |
 | `SELECT_THREAD` | No unique loaded matching task | Open/resume Codex on the same App Server; pass its explicit ID |
 | `WORKER_NOT_FINISHED` | Web answered without closing its grant | Ask Web to call `worker_finish` with its existing turn token |
+
+Chrome `connected` and conversation `bound` are separate. A reload or replacement tab may keep the same
+conversation URL but receive a new tab ID; the extension rebinds only that same normalized URL. Before ending a
+session from a local TUI message, refresh bridge status and reconcile any submitted, working or uncertain turn.
 
 When an uncertain send cannot be reconciled, pause the bridge, inspect the existing Web conversation and local changes,
 then resume with a new bounded task only after deciding whether repeating work is safe. There is no “force resend” button.

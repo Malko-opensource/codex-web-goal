@@ -7,6 +7,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { fixture } from '../helpers.js';
 import { serve } from '../../src/http.js';
+import { Bridge } from '../../src/bridge.js';
+import { FakeHost, FakeRunner } from '../execution-helpers.js';
+import { executionPolicySchema } from '../../src/execution-contract.js';
 
 // Nothing from chatgpt.com is loaded: all navigation is fulfilled by this local fixture.
 const html = `<!doctype html><html><body><main id="messages"></main><textarea id="prompt-textarea"></textarea><button data-testid="send-button">Send</button>
@@ -43,6 +46,82 @@ async function bind(popup: Page, chat: Page) {
   const result = await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'bind_active' }));
   expect(result).toEqual({ ok: true });
 }
+
+test('ordinary request uses shared control tools and returns an answer without creating a Goal', async () => {
+  const f = await fixture(); await f.bridge.shutdown(); f.native.thread.goal = null;
+  const host = new FakeHost(), bridge = new Bridge(f.store, f.workspace, f.native, { host }); await bridge.recover();
+  const servers = await serve(bridge, { mcpPort: 0, controlPort: 0, uiDirectory: path.resolve('dist/ui') });
+  const context = await extensionContext(f.directory), mcp = new Client({ name: 'ordinary-worker-fixture', version: '1' });
+  try {
+    const local = async (name: string, args: Record<string, unknown>) => {
+      const response = await fetch(`http://127.0.0.1:${servers.controlPort}/api/tools/${name}`, { method: 'POST', headers: { authorization: `Bearer ${f.store.state.controlToken}`, 'content-type': 'application/json' }, body: JSON.stringify(args) });
+      expect(response.status).toBe(200); return response.json();
+    };
+    await mcp.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${servers.mcpPort}/mcp/${f.store.state.mcpToken}`)));
+    const call = async (name: string, args: Record<string, unknown>) => { const result = await mcp.callTool({ name, arguments: args }); expect(result.isError).toBeFalsy(); return JSON.parse((result.content as { text: string }[])[0]!.text); };
+    await context.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: html }));
+    const chat = await context.newPage();
+    await chat.exposeFunction('performWorker', async (prompt: string) => {
+      const turn_token = /turn_token=([\w-]+)/.exec(prompt)![1];
+      const canonical = await call('worker_context', { turn_token });
+      expect(canonical.policy.resultKind).toBe('answer');
+      await call('worker_context', { turn_token, acknowledge_digest: canonical.context.digest });
+      expect(host.modelRequests).toBe(0);
+      await call('worker_finish', { turn_token, context_version: canonical.context.version, policy_version: canonical.policy.version, summary: 'Analysis returned to the originating request', evidence: ['Synthetic source'], unresolved: [] });
+    });
+    await chat.goto('https://chatgpt.com/c/ordinary-fixture');
+    const popup = await installAndPair(context, `http://127.0.0.1:${servers.controlPort}`, (await bridge.pairCode()).code); await bind(popup, chat);
+    await local('delegation_open', { kind: 'request', thread_id: f.native.thread.id, origin_request_id: 'ordinary-origin', input_version: 1, objective: 'Analyze a normal request', policy: { mode: 'web-controlled', network: 'public-internet', resultKind: 'answer' } });
+    await local('delegation_dispatch', { request_id: 'ordinary-part', task: 'Analyze', criteria: 'Return a useful answer' });
+    await expect.poll(() => bridge.turn?.status, { timeout: 15000 }).toBe('checked'); await expect.poll(() => host.modelRequests).toBe(1);
+    const result = await local('delegation_result', { turn_id: bridge.turn!.id }); expect(result.result.kind).toBe('answer');
+    expect(f.native.thread.goal).toBeNull(); expect(host.lease!.origin!.requestId).toBe('ordinary-origin');
+    expect(await chat.evaluate(() => (window as unknown as { sends: number }).sends)).toBe(1);
+  } finally { await context.close(); await mcp.close(); await servers.close(); await bridge.shutdown(); await f.cleanup(); }
+});
+
+test('Web-controlled MCP edit/verify/retry/finish wakes a synthetic host only once', async () => {
+  const f = await fixture(); await f.bridge.shutdown();
+  await fs.writeFile(path.join(f.root, 'check.cjs'), 'immutable synthetic checker');
+  await fs.writeFile(path.join(f.root, 'result.txt'), 'initial');
+  const host = new FakeHost(), runner = new FakeRunner();
+  const bridge = new Bridge(f.store, f.workspace, f.native, { host, runner }); await bridge.recover();
+  const servers = await serve(bridge, { mcpPort: 0, controlPort: 0, uiDirectory: path.resolve('dist/ui') });
+  const context = await extensionContext(f.directory);
+  const mcp = new Client({ name: 'synthetic-execution-worker', version: '1' });
+  try {
+    await mcp.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${servers.mcpPort}/mcp/${f.store.state.mcpToken}`)));
+    const call = async (name: string, args: Record<string, unknown>) => { const result = await mcp.callTool({ name, arguments: args }); expect(result.isError).toBeFalsy(); return JSON.parse((result.content as { text: string }[])[0]!.text); };
+    await context.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: html }));
+    const chat = await context.newPage();
+    await chat.exposeFunction('performWorker', async (prompt: string) => {
+      const turn_token = /turn_token=([\w-]+)/.exec(prompt)![1];
+      const canonical = await call('worker_context', { turn_token });
+      await call('worker_context', { turn_token, acknowledge_digest: canonical.context.digest });
+      const grant = { turn_token, context_version: canonical.context.version, policy_version: canonical.policy.version };
+      runner.exitCode = 1;
+      const failed = await call('workspace_verify', { ...grant, request_id: 'first-check' });
+      await expect.poll(async () => (await call('workspace_job_result', { run_id: failed.run_id })).status).toBe('failed');
+      expect(host.modelRequests).toBe(0);
+      await call('workspace_write', { ...grant, operation_id: randomUUID(), path: 'result.txt', expected_sha256: (await f.workspace.read('result.txt')).sha256, content: 'fixed' });
+      runner.exitCode = 0;
+      const passed = await call('workspace_verify', { ...grant, request_id: 'second-check' });
+      await expect.poll(async () => (await call('workspace_job_result', { run_id: passed.run_id })).status).toBe('passed');
+      expect(host.modelRequests).toBe(0);
+      await call('worker_finish', { ...grant, run_id: passed.run_id, summary: 'Verified by runner' });
+    });
+    await chat.goto('https://chatgpt.com/c/fixture-chat');
+    const popup = await installAndPair(context, `http://127.0.0.1:${servers.controlPort}`, (await bridge.pairCode()).code);
+    await bind(popup, chat); await expect.poll(() => Boolean(f.store.state.chat)).toBe(true);
+    await bridge.open('goal', undefined, executionPolicySchema.parse({ mode: 'web-controlled', network: 'public-internet', checks: [{ id: 'required', argv: ['node', 'check.cjs'] }], protectedFiles: ['check.cjs'], expectedFiles: ['result.txt'] }));
+    await bridge.dispatch({ requestId: 'web-controlled-browser', task: 'Fix result', context: 'Explicit fixture context', criteria: 'Fixed and verified' });
+    await expect.poll(() => bridge.turn?.status, { timeout: 15_000 }).toBe('checked');
+    await expect.poll(() => host.modelRequests).toBe(1);
+    await bridge.pump(); expect(host.modelRequests).toBe(1);
+    expect(runner.executions).toBe(2); expect(await chat.evaluate(() => (window as unknown as { sends: number }).sends)).toBe(1);
+    expect(f.native.thread.goal!.status).toBe('active');
+  } finally { await context.close(); await mcp.close(); await servers.close(); await bridge.shutdown(); await f.cleanup(); }
+});
 
 test('Chrome extension + actual MCP + three local verification cycles + reconnect + manual chat', async () => {
   const f = await fixture(); const servers = await serve(f.bridge, { mcpPort: 0, controlPort: 0, uiDirectory: path.resolve('dist/ui') });
@@ -89,7 +168,8 @@ test('Chrome extension + actual MCP + three local verification cycles + reconnec
     expect(f.bridge.view().turns).toHaveLength(3);
     const dashboard = await context.newPage();
     await dashboard.goto(`http://127.0.0.1:${servers.controlPort}/#${f.store.state.controlToken}`);
-    await expect(dashboard.locator('#turn-state')).toHaveText('#3 · checked');
+    await expect(dashboard.locator('#turn-state')).toHaveText('#3 · 로컬 검증됨');
+    await expect(dashboard.locator('#turn-detail')).toContainText('전달 answered · 작업 worker_finished · 검증 locally_validated');
     await expect(dashboard.locator('#connection-status')).toHaveText('● Chrome connected');
     await expect(dashboard.locator('#error')).toBeHidden();
     await dashboard.screenshot({ path: 'test-results/dashboard.png', fullPage: true });
@@ -111,6 +191,23 @@ test('an ambiguous send survives reload without submitting the same prompt again
     await chat.reload(); await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'reconnect' }));
     await expect.poll(() => f.bridge.state.events.filter(x => x.kind === 'turn_uncertain').length, { timeout: 10_000 }).toBeGreaterThan(1);
     expect(await chat.evaluate(() => localStorage.attempts)).toBe('1');
+  } finally { await context.close(); await servers.close(); await f.cleanup(); }
+});
+
+test('the saved conversation rebinds by URL after the extension socket and tab are replaced', async () => {
+  const f = await fixture(); const servers = await serve(f.bridge, { mcpPort: 0, controlPort: 0, uiDirectory: path.resolve('dist/ui') });
+  const context = await extensionContext(f.directory);
+  try {
+    await context.route('https://chatgpt.com/**', route => route.fulfill({ contentType: 'text/html', body: html }));
+    const chat = await context.newPage(); await chat.goto('https://chatgpt.com/c/fixture-chat');
+    const popup = await installAndPair(context, `http://127.0.0.1:${servers.controlPort}`, (await f.bridge.pairCode()).code);
+    await bind(popup, chat); const oldTabId = f.bridge.state.chat!.tabId;
+    f.bridge.conversation?.close(); await expect.poll(() => f.bridge.view().conversationConnected).toBe(false);
+    await chat.close();
+    const reopened = await context.newPage(); await reopened.goto('https://chatgpt.com/c/fixture-chat');
+    await expect.poll(() => f.bridge.view().conversationConnected, { timeout: 10_000 }).toBe(true);
+    await expect.poll(() => f.bridge.state.chat?.tabId, { timeout: 10_000 }).not.toBe(oldTabId);
+    expect(f.bridge.state.chat?.url).toBe('https://chatgpt.com/c/fixture-chat');
   } finally { await context.close(); await servers.close(); await f.cleanup(); }
 });
 

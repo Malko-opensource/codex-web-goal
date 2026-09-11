@@ -2,7 +2,17 @@
 
 [English](README.md) · 한국어
 
-**Web authors. Local Codex verifies.**
+**Web이 작성하고, 명시적인 실행 증거로 검증합니다.**
+
+기본값은 기존 로컬 검증 모드입니다. 선택형 `web-controlled` 프로토콜은 맥락 버전, Mac 격리 실행,
+Web 수정·재검증, 비공개 호스트 대기 어댑터를 추가합니다. **이 저장소에는 실제 Codex 호스트 스케줄러
+변경이 포함되어 있지 않습니다.** 지원 호스트가 없으면 새 모드를 차단하며 모델 폴링으로 대체하지 않습니다.
+합성 테스트의 깨우기 0회는 실제 Codex의 무모델 대기 검증이 아닙니다.
+[구현 범위와 호스트 연결 조건](docs/web-goal/web-controlled-execution.md)을 먼저 확인하세요.
+
+[공통 위임 계층](docs/web-goal/shared-delegation.md)은 Goal을 만들지 않는 일반 요청도 지원합니다.
+답변·파일·검증 결과 계약, 선택한 스킬·이미지, 승인형 MCP 도구, 로컬 지원 경로를 제공합니다.
+실제 원래 대화로 자동 복귀하려면 위 호스트 연동이 필요합니다.
 
 > **실험적 프로젝트:** 합성 브라우저 테스트와 네이티브 Codex 프로토콜 검증을 통과했습니다.
 > 실제 ChatGPT 계정과 네이티브 Goal 자동 반복의 종단 간 동작은 아직 검증하지 않았습니다.
@@ -43,6 +53,8 @@ Commit, push, MR/PR 생성은 필수 단계가 아니며 브리지가 자동 수
 
 기준 실행 경로는 **이 프로젝트가 시작한 App Server에 연결한 Codex CLI**입니다.
 이미 열려 있는 Codex Desktop 작업에 자동으로 붙는 기능은 제공하지 않습니다.
+Codex 인앱 브라우저는 로컬 대시보드를 옆에 띄우는 용도로 사용할 수 있지만, Chrome 확장이 주입되지
+않으므로 현재의 ChatGPT 작업 탭을 대체하지 않습니다.
 동시에 개발자 1명·워크스페이스 1개·브리지 세션 1개·Web 대화 1개를 다룹니다.
 워크스페이스별 별도 프로세스/상태 디렉터리/포트를 쓰려면 App Server 주소도 별도로 지정해야 합니다.
 
@@ -166,7 +178,7 @@ node dist/cli.js codex --thread-id <기존-네이티브-작업-ID>
 - 재개해도 과거 편집 토큰은 살아나지 않습니다. Codex가 부분 변경을 점검하고 새 턴을 발급합니다.
 - 같은 Web 대화의 수동 메시지는 로컬 Goal 지시로 수집하지 않습니다. **Web 모델의 대화 문맥은 공유되므로 영향까지 격리되지는 않습니다.**
 
-[복구 절차 및 제한](docs/OPERATIONS.md) · [설계/상태 계약](docs/ARCHITECTURE.md) · [보안 경계](SECURITY.md)
+[복구 절차 및 제한](docs/OPERATIONS.md) · [설계/상태 계약](docs/ARCHITECTURE.md) · [상세 운영 설계](docs/web-goal/README.md) · [보안 경계](SECURITY.md)
 
 ## 개발과 검증
 

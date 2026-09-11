@@ -17,8 +17,20 @@ async function getTab() {
   const selected = config;
   if (!selected?.chatUrl) return undefined;
   const tabs = await chrome.tabs.query({ url: 'https://chatgpt.com/*' });
-  return tabs.find(t => t.id === selected.tabId && t.url?.split(/[?#]/)[0]?.replace(/\/$/, '') === selected.chatUrl) ??
-    tabs.find(t => t.url?.split(/[?#]/)[0]?.replace(/\/$/, '') === selected.chatUrl);
+  const matches = tabs.filter(t => t.url?.split(/[?#]/)[0]?.replace(/\/$/, '') === selected.chatUrl);
+  const exact = matches.find(t => t.id === selected.tabId);
+  if (exact) return exact;
+  if (matches.length > 1) throw new Error('Several tabs match the saved conversation. Explicitly bind the intended tab.');
+  return matches[0];
+}
+async function rebindKnownTab(ws: WebSocket) {
+  const tab = await getTab();
+  if (!config?.chatUrl || !tab?.id) return false;
+  try { await chrome.tabs.sendMessage(tab.id, { type: 'ping' }); }
+  catch { return false; }
+  config.tabId = tab.id; await save();
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'bind', url: config.chatUrl, tabId: tab.id }));
+  return true;
 }
 async function relay(message: unknown) {
   const tab = await getTab();
@@ -38,13 +50,14 @@ async function connect() {
       if (message.type === 'ready') {
         connecting = false; connectionStatus = 'Connected'; lastError = '';
         if (message.chat) { config!.chatUrl = message.chat.url; await save(); }
+        await rebindKnownTab(ws);
         if (heartbeat) clearInterval(heartbeat);
         heartbeat = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'heartbeat' })); }, 20_000);
       } else if (message.type === 'bound') {
         config!.chatUrl = message.chat.url; config!.tabId = message.chat.tabId; await save();
       } else if (['dispatch', 'reconcile', 'cancel'].includes(message.type)) {
         try { await relay(message); }
-        catch (error) { ws.send(JSON.stringify({ type: 'blocked', turnId: message.turnId, reason: String(error) })); }
+        catch (error) { ws.send(JSON.stringify({ type: 'blocked', turnId: message.turnId, generation: message.generation, reason: String(error) })); }
       } else if (message.type === 'error') lastError = `${message.code}: ${message.message}`;
     } catch (error) { lastError = String(error); }
   };
@@ -64,10 +77,16 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (isContent) {
       if (!sender.tab || sender.frameId !== 0) throw new Error('Only the top-level bound chat can send observations.');
       if (!config?.chatUrl || sender.tab!.url?.split(/[?#]/)[0]?.replace(/\/$/, '') !== config.chatUrl) return { error: 'This conversation is not bound.' };
+      if (message.type === 'content_ready') {
+        const selected = await getTab();
+        if (selected?.id !== sender.tab.id) return { error: 'This tab was not selected.' };
+        if (socket?.readyState === WebSocket.OPEN) await rebindKnownTab(socket);
+        return { ok: true };
+      }
+      if (sender.tab.id !== config.tabId) return { error: 'This is not the currently bound tab.' };
       if (message.type === 'journal_get') return { journal: (await chrome.storage.local.get(`turn:${message.id}`))[`turn:${message.id}`] };
       if (message.type === 'journal_set') { await chrome.storage.local.set({ [`turn:${message.id}`]: message.journal }); return { ok: true }; }
       if (message.type === 'browser_event') { if (socket?.readyState !== WebSocket.OPEN) throw new Error('Bridge disconnected; observation will be reconciled.'); socket.send(JSON.stringify(message.event)); return { ok: true }; }
-      if (message.type === 'content_ready') { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'bind', url: config.chatUrl, tabId: sender.tab!.id })); return { ok: true }; }
       throw new Error('Content scripts cannot access pairing or control configuration.');
     }
     if (message.type === 'status') return { connectionStatus, lastError, base: config?.base, chatUrl: config?.chatUrl };

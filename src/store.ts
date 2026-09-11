@@ -10,12 +10,23 @@ export class Store {
     await fs.mkdir(this.directory, { recursive: true, mode: 0o700 });
     await fs.chmod(this.directory, 0o700);
     try {
-      this.state = JSON.parse(await fs.readFile(path.join(this.directory, 'state.json'), 'utf8')) as State;
-      requireThat(this.state.version === 1, 'STATE_VERSION', 'Unsupported state version.');
+      const bytes = await fs.readFile(path.join(this.directory, 'state.json'), 'utf8');
+      const loaded = JSON.parse(bytes);
+      requireThat([1, 2, 3].includes(loaded.version), 'STATE_VERSION', 'Unsupported state version.');
+      requireThat(loaded.workspace === workspace, 'WORKSPACE_CHANGED', 'Use a different state directory for a different workspace.');
+      if (loaded.version < 3) {
+        const backup = await fs.open(path.join(this.directory, `state-v${loaded.version}-${randomUUID()}.json`), 'wx', 0o600);
+        try { await backup.writeFile(bytes); await backup.sync(); } finally { await backup.close(); }
+        loaded.runs ??= {}; loaded.wakeEvents ??= {};
+        loaded.version = 3; loaded.localAssists = {}; loaded.capabilityCalls = {};
+      }
+      this.state = loaded as State;
+      requireThat(this.state.runs && this.state.wakeEvents && this.state.localAssists && this.state.capabilityCalls, 'STATE_INVALID', 'Delegation records are missing.');
       requireThat(this.state.workspace === workspace, 'WORKSPACE_CHANGED', 'Use a different state directory for a different workspace.');
+      await this.save();
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      this.state = { version: 1, workspace, mcpToken: token(), controlToken: token(), sessions: {}, turns: {}, operations: {}, jobs: {}, events: [] };
+      this.state = { version: 3, workspace, mcpToken: token(), controlToken: token(), sessions: {}, turns: {}, operations: {}, jobs: {}, runs: {}, wakeEvents: {}, localAssists: {}, capabilityCalls: {}, events: [] };
       await this.save();
     }
   }

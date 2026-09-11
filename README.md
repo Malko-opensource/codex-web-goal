@@ -2,7 +2,17 @@
 
 English · [한국어](README.ko.md)
 
-**Web authors. Local Codex verifies.**
+**Web authors. Verification is explicit and evidence-bound.**
+
+The default remains local-supervised. An opt-in **web-controlled** protocol adds versioned context,
+Mac sandbox execution, iterative verification and a private host-wait adapter. **Stock Codex host
+scheduler integration is not supplied by this repository**: configuring a supported host is required;
+without it the mode fails closed. Synthetic zero-wake tests are not proof of real Codex zero-model waiting.
+See [implementation and host requirements](docs/web-goal/web-controlled-execution.md).
+
+The [shared delegation layer](docs/web-goal/shared-delegation.md) also supports ordinary requests without
+creating a Goal: task-specific result contracts, selected skill/image resources, approval-gated MCP tools,
+and bounded local assistance. Actual return-to-conversation scheduling requires the host integration above.
 
 Connect a real ChatGPT Web conversation to a local Codex native `/goal`.
 Local Codex owns the objective, sends the next task and verification feedback to Web,
@@ -43,6 +53,8 @@ including an on-premises GitLab clone accessed over VPN. No commit, push, PR or 
 
 The supported entry point is **Codex CLI connected to the App Server started by this project**.
 Attaching automatically to an already-open Codex Desktop task is not supported.
+The Codex in-app browser can display the local dashboard beside the task, but it does not replace the
+Chrome work tab because this release depends on a Chrome MV3 extension and content script.
 One bridge instance handles one developer, workspace, session and selected Web conversation.
 Separate instances need distinct state directories, bridge ports and App Server addresses.
 
@@ -156,7 +168,7 @@ delivery stop progress for local review; resuming does not revive old write toke
 Manual messages in the selected Web chat are not collected as local Goal instructions, but they **share the Web model's context**.
 
 Read [operations and recovery](docs/OPERATIONS.md), [architecture](docs/ARCHITECTURE.md),
-[security boundaries](SECURITY.md) and [contributing](CONTRIBUTING.md).
+[expanded Korean operational design](docs/web-goal/README.md), [security boundaries](SECURITY.md) and [contributing](CONTRIBUTING.md).
 
 ## Development
 

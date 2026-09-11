@@ -1,12 +1,13 @@
 import { ChatDom } from './dom.js';
 
-type Request = { type: 'dispatch' | 'reconcile'; turnId: string; marker: string; prompt: string; url: string };
+type Request = { type: 'dispatch' | 'reconcile'; turnId: string; marker: string; prompt: string; url: string; generation?: string };
 type Journal = { state: 'prepared' | 'attempting' | 'submitted' | 'answered'; answer?: string };
 const dom = new ChatDom(document);
 let running: Request | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let stable = { text: '', since: 0 };
 let processing = false;
+let pending: Request | undefined;
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function rpc(message: unknown) {
   const result = await chrome.runtime.sendMessage(message);
@@ -15,7 +16,7 @@ async function rpc(message: unknown) {
 }
 async function getJournal(id: string): Promise<Journal | undefined> { return (await rpc({ type: 'journal_get', id }))?.journal; }
 async function setJournal(id: string, journal: Journal) { await rpc({ type: 'journal_set', id, journal }); }
-async function report(type: string, request: Request, extra: object = {}) { await rpc({ type: 'browser_event', event: { type, turnId: request.turnId, ...extra } }); }
+async function report(type: string, request: Request, extra: object = {}) { await rpc({ type: 'browser_event', event: { type, turnId: request.turnId, generation: request.generation, ...extra } }); }
 
 async function observe(request: Request) {
   if (running?.turnId !== request.turnId) return;
@@ -34,9 +35,13 @@ async function observe(request: Request) {
 }
 
 async function process(request: Request) {
-  if (processing) return;
+  // A newer binding generation must not be dropped while an old observation is waiting.
+  if (processing) { pending = request; return; }
   processing = true;
-  try { await processOnce(request); } finally { processing = false; }
+  try { await processOnce(request); } finally {
+    processing = false;
+    if (pending) { const next = pending; pending = undefined; void process(next).catch(error => { void report('blocked', next, { reason: String(error) }); }); }
+  }
 }
 async function processOnce(request: Request) {
   if (running && running.turnId !== request.turnId) { await report('blocked', request, { reason: 'A different automatic turn is still being observed.' }); return; }
@@ -79,7 +84,7 @@ async function processOnce(request: Request) {
 
 chrome.runtime.onMessage.addListener((message, _sender, respond) => {
   if (message.type === 'ping') { respond({ ready: true }); return; }
-  if (message.type === 'cancel') { running = undefined; if (timer) clearTimeout(timer); respond({ cancelled: true }); return; }
+  if (message.type === 'cancel') { running = undefined; pending = undefined; if (timer) clearTimeout(timer); respond({ cancelled: true }); return; }
   if (message.type === 'dispatch' || message.type === 'reconcile') {
     void process(message as Request).catch(error => { void report('blocked', message as Request, { reason: String(error) }); }); respond({ received: true });
   }

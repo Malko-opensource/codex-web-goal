@@ -20,11 +20,11 @@ export async function fixture() {
   const store = new Store(path.join(directory, 'state')); await store.open(root);
   const native = new FakeNative(root), workspace = new Workspace(root), bridge = new Bridge(store, workspace, native);
   await bridge.recover();
-  return { directory, root, store, native, workspace, bridge, async cleanup() { bridge.close(); await fs.rm(directory, { recursive: true, force: true }); } };
+  return { directory, root, store, native, workspace, bridge, async cleanup() { await bridge.shutdown(); await fs.rm(directory, { recursive: true, force: true }); } };
 }
 export async function startTurn(bridge: Bridge, mode: 'goal' | 'plan' = 'goal') {
   await bridge.bind('https://chatgpt.com/c/fixture-chat', 1);
-  const messages: unknown[] = []; bridge.browser = { send: value => messages.push(value), close() {} };
+  const messages: unknown[] = []; bridge.conversation = { surface: 'chrome-extension', send: value => messages.push(value), close() {} };
   await bridge.open(mode);
   const turn = await bridge.dispatch({ requestId: 'task-1', task: 'Implement add(a,b)', context: '', criteria: 'add(2,3) is 5' });
   await eventually(() => bridge.turn?.status === 'dispatching');
