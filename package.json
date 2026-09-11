@@ -1,0 +1,38 @@
+{
+  "name": "codex-web-goal",
+  "version": "0.1.0",
+  "description": "A local Codex Goal supervisor for real ChatGPT Web conversations",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/Malko-opensource/codex-web-goal.git" },
+  "homepage": "https://github.com/Malko-opensource/codex-web-goal#readme",
+  "bugs": { "url": "https://github.com/Malko-opensource/codex-web-goal/issues" },
+  "keywords": ["codex", "chatgpt", "mcp", "local-first", "chrome-extension", "goal"],
+  "type": "module",
+  "engines": { "node": ">=22.16" },
+  "bin": { "codex-web-goal": "dist/cli.js" },
+  "files": ["dist", "plugins", "extension", "docs", ".agents/plugins/marketplace.json", "README.md", "README.ko.md", "SECURITY.md", "LICENSE"],
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc --noEmit && node scripts/build.mjs",
+    "check": "tsc --noEmit",
+    "pretest": "npm run build",
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:browser": "playwright test",
+    "test:codex": "node --import tsx scripts/check-codex.ts",
+    "release": "npm run build && node scripts/release.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "ws": "^8.18.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/chrome": "^0.1.37",
+    "@types/node": "^22.19.0",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

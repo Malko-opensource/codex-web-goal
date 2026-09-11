@@ -1,0 +1,10 @@
+{
+  "name": "codex-web-goal",
+  "interface": { "displayName": "Codex Web Goal" },
+  "plugins": [{
+    "name": "codex-web-goal",
+    "source": { "source": "local", "path": "./plugins/codex-web-goal" },
+    "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+    "category": "Productivity"
+  }]
+}

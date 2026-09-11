@@ -1,0 +1,20 @@
+{
+  "name": "codex-web-goal",
+  "version": "0.1.0",
+  "description": "Supervise a real ChatGPT Web conversation from a native local Codex Goal.",
+  "author": {
+    "name": "Codex Web Goal contributors"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Web Goal",
+    "shortDescription": "Web authors. Local Codex verifies.",
+    "longDescription": "Connect a selected Chrome ChatGPT conversation to a native Codex Goal with resumable Web turns and local verification evidence.",
+    "developerName": "Codex Web Goal contributors",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use $web-goal to delegate this goal's writing to ChatGPT Web and verify the result locally."
+  },
+  "mcpServers": "./.mcp.json",
+  "license": "MIT"
+}

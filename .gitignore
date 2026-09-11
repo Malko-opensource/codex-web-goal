@@ -1,0 +1,10 @@
+node_modules/
+/dist/
+/release/
+/extension/
+/plugins/codex-web-goal/dist/
+/test-results/
+/playwright-report/
+.web-goal/
+*.log
+.DS_Store

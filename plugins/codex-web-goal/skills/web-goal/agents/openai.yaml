@@ -1,0 +1,6 @@
+interface:
+  display_name: "Web Goal"
+  short_description: "Delegate Web writing; verify locally with Codex"
+  default_prompt: "Use $web-goal to supervise this goal through my connected ChatGPT Web conversation."
+policy:
+  allow_implicit_invocation: false

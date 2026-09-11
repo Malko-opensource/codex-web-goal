@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "web_goal": {
+      "command": "node",
+      "args": ["dist/control-mcp.cjs"],
+      "cwd": ".",
+      "env_vars": ["WEB_GOAL_STATE_DIR"]
+    }
+  }
+}
