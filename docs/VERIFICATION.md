@@ -3,7 +3,7 @@
 This records executed checks, not promises about untested environments.
 
 Environment: macOS arm64, Node 25.6.1, Codex CLI 0.153.4, Playwright 1.63.0 / Chromium 153.0.8010.12.
-Node 22.16 is the declared minimum; Linux/Windows and the Node 22 CI matrix have not been executed on this host.
+Node 22.16 is the declared minimum. Hosted Node 22 checks are recorded separately below; they are not local-host results.
 
 | Executed check | Result |
 | --- | --- |
@@ -37,6 +37,14 @@ Not yet verified:
 GitHub source publication is separate from a tagged binary release or live-account acceptance.
 The initial source publication includes English/Korean setup guides, MIT licensing, third-party notices,
 contribution templates and a Node 22 CI matrix. CI results are evidence only after the jobs actually run.
+
+## Initial GitHub CI
+
+[The first source-publication run](https://github.com/Malko-opensource/codex-web-goal/actions/runs/34560849477)
+passed on Linux (including all three synthetic browser tests) and macOS. Windows passed 14 of 15 Node tests;
+the native sidecar test incorrectly used the POSIX-only `/fixture` string as its expected absolute workspace.
+The fixture now uses `path.resolve` on every platform and also checks that another workspace is excluded.
+Windows acceptance depends on the follow-up CI result, not this fixture correction alone.
 
 The fixture dashboard screenshot is generated at `test-results/dashboard.png`; it contains only synthetic data.
 Follow the account-backed acceptance checklist in [OPERATIONS.md](OPERATIONS.md) before a production release.
