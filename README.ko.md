@@ -48,7 +48,20 @@ Commit, push, MR/PR 생성은 필수 단계가 아니며 브리지가 자동 수
 
 ## 시작하기
 
-### 1. 빌드와 Codex 플러그인 설치
+### 1. Codex 플러그인 설치
+
+일반 외부 사용자는 이 GitHub 저장소를 marketplace로 등록한 뒤 플러그인을 설치합니다.
+
+```sh
+codex plugin marketplace add Malko-opensource/codex-web-goal --ref main
+codex plugin add codex-web-goal@codex-web-goal
+```
+
+Marketplace 매니페스트는 `.agents/plugins/marketplace.json`, 플러그인 매니페스트는
+`plugins/codex-web-goal/.codex-plugin/plugin.json`에 있습니다. 저장소에 자체 포함 MCP 번들을 함께 배포하므로
+marketplace 설치 과정에서 npm 실행이나 소스 빌드를 하지 않습니다. 설치 후 Codex를 다시 시작하세요.
+
+로컬 브리지 CLI도 필요합니다. npm 패키지를 공개하기 전까지는 저장소를 clone하여 빌드합니다.
 
 ```sh
 git clone https://github.com/Malko-opensource/codex-web-goal.git
@@ -58,9 +71,9 @@ npm run build
 node dist/cli.js install-plugin
 ```
 
-마지막 명령은 이 로컬 저장소를 Codex marketplace로 등록하고 플러그인을 설치합니다.
+마지막 명령은 개발 중인 로컬 checkout을 Codex marketplace로 등록하고 플러그인 설치 대상을 전환합니다.
 사용자 Codex 설정에 설치 내역이 기록됩니다. **빌드 자체는 설정을 변경하지 않습니다.**
-설치 전에 플러그인과 스킬을 검토하고, 설치 후 Codex를 새로 시작하세요.
+설치 전에 플러그인과 스킬을 검토하세요.
 이 저장소 경로를 이동했다면 새 경로에서 다시 등록해야 합니다.
 
 ### 2. 로컬 브리지 시작

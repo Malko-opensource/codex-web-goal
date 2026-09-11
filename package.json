@@ -1,6 +1,6 @@
 {
   "name": "codex-web-goal",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local Codex Goal supervisor for real ChatGPT Web conversations",
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/Malko-opensource/codex-web-goal.git" },
@@ -15,7 +15,9 @@
     "dev": "tsx src/cli.ts",
     "build": "tsc --noEmit && node scripts/build.mjs",
     "check": "tsc --noEmit",
-    "pretest": "npm run build",
+    "check:distribution": "node scripts/check-distribution.mjs",
+    "check:generated": "git diff --exit-code -- plugins/codex-web-goal/dist/control-mcp.cjs plugins/codex-web-goal/THIRD_PARTY_NOTICES.txt",
+    "pretest": "npm run check:distribution && npm run build",
     "test": "node --import tsx --test test/*.test.ts",
     "test:browser": "playwright test",
     "test:codex": "node --import tsx scripts/check-codex.ts",

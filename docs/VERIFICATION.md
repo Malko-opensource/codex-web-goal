@@ -21,6 +21,7 @@ Node 22.16 is the declared minimum. Hosted Node 22 checks are recorded separatel
 | npm package file-list inspection | Passed; no state, credentials or tests included |
 | Clean source export | `npm ci`, all 15 Node tests and release build passed with only publication-selected source |
 | Publication source inspection | Extension sources included; generated output/state excluded; checked credential and private-path patterns had no findings |
+| Git marketplace package | Clean remote registration exposed the catalog, but v0.1.0 omitted the generated MCP bundle; v0.1.1 tracks and checks it before tests |
 
 The native installation test found that this Codex version does not expand plugin-root placeholders in MCP arguments.
 The shipped MCP configuration therefore uses an explicit plugin-relative `cwd` and a relative executable argument.
@@ -45,6 +46,14 @@ passed on Linux (including all three synthetic browser tests) and macOS. Windows
 the native sidecar test incorrectly used the POSIX-only `/fixture` string as its expected absolute workspace.
 The fixture now uses `path.resolve` on every platform and also checks that another workspace is excluded.
 Windows acceptance depends on the follow-up CI result, not this fixture correction alone.
+
+## External marketplace packaging
+
+The v0.1.0 catalog and plugin manifests were valid, but the repository ignored
+`plugins/codex-web-goal/dist/control-mcp.cjs`. A clean Git marketplace could therefore register and
+select the plugin while installing no executable MCP bundle. Version 0.1.1 includes that self-contained bundle,
+checks all required distribution files before tests, and fails CI if a rebuild changes the committed bundle.
+The external installation is accepted only after a clean remote marketplace install and actual MCP call both pass.
 
 The fixture dashboard screenshot is generated at `test-results/dashboard.png`; it contains only synthetic data.
 Follow the account-backed acceptance checklist in [OPERATIONS.md](OPERATIONS.md) before a production release.

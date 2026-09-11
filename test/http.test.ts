@@ -15,7 +15,7 @@ test('real MCP transport initializes, exposes only workspace tools and protects 
   const publicUrl = `http://127.0.0.1:${servers.mcpPort}`, privateUrl = `http://127.0.0.1:${servers.controlPort}`;
   const client = new Client({ name: 'fixture', version: '1' });
   t.after(async () => { await client.close(); await servers.close(); await f.cleanup(); });
-  assert.deepEqual(await (await fetch(publicUrl + '/health')).json(), { ok: true, version: '0.1.0' });
+  assert.deepEqual(await (await fetch(publicUrl + '/health')).json(), { ok: true, version: '0.1.1' });
   assert.equal((await fetch(publicUrl + '/api/status')).status, 404);
   assert.equal((await fetch(privateUrl + '/api/status')).status, 401);
   assert.equal((await fetch(privateUrl + '/api/status', { headers: { authorization: `Bearer ${f.store.state.controlToken}`, origin: 'https://evil.example' } })).status, 403);

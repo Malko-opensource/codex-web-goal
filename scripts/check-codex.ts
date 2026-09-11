@@ -7,6 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fixture } from '../test/helpers.js';
 import { serve } from '../src/http.js';
+import { VERSION } from '../src/shared.js';
 
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'web-goal-codex-'));
 const f = await fixture();
@@ -14,7 +15,10 @@ const servers = await serve(f.bridge, { mcpPort: 0, controlPort: 0, uiDirectory:
 await fs.writeFile(path.join(f.store.directory, 'runtime.json'), JSON.stringify({ controlPort: servers.controlPort }));
 const env = { ...process.env, CODEX_HOME: temporary, WEB_GOAL_STATE_DIR: f.store.directory, RUST_LOG: 'warn,codex_rmcp_client=debug' };
 try {
-  execFileSync('codex', ['plugin', 'marketplace', 'add', path.resolve('.'), '--json'], { env, stdio: 'pipe', timeout: 15_000 });
+  const marketplace = process.env.WEB_GOAL_MARKETPLACE_SOURCE ?? path.resolve('.');
+  const marketplaceArgs = ['plugin', 'marketplace', 'add', marketplace, '--json'];
+  if (process.env.WEB_GOAL_MARKETPLACE_REF) marketplaceArgs.push('--ref', process.env.WEB_GOAL_MARKETPLACE_REF);
+  execFileSync('codex', marketplaceArgs, { env, stdio: 'pipe', timeout: 30_000 });
   execFileSync('codex', ['plugin', 'add', 'codex-web-goal@codex-web-goal', '--json'], { env, stdio: 'pipe', timeout: 15_000 });
   const cache = path.join(temporary, 'plugins/cache/codex-web-goal/codex-web-goal');
   for (const version of await fs.readdir(cache)) {
@@ -39,7 +43,7 @@ const call = (method: string, params: object) => new Promise<any>((resolve, reje
   pending.set(id, { resolve, reject, timer }); child.stdin.write(JSON.stringify({ id, method, params }) + '\n');
 });
 try {
-  const initialize = await call('initialize', { clientInfo: { name: 'web_goal_protocol_test', version: '0.1.0' }, capabilities: { experimentalApi: true } });
+  const initialize = await call('initialize', { clientInfo: { name: 'web_goal_protocol_test', version: VERSION }, capabilities: { experimentalApi: true } });
   assert.equal(typeof initialize.userAgent, 'string');
   child.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n');
   const threads = await call('thread/loaded/list', { limit: 10 }); assert.ok(Array.isArray(threads.data));

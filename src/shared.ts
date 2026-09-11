@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.1.1';
 export const PORTS = { mcp: 43120, control: 43121, codex: 43122 };
 export const token = () => randomBytes(32).toString('base64url');
 export const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');

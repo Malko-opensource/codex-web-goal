@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = (...parts) => path.join(root, ...parts);
+const project = JSON.parse(await fs.readFile(out('package.json'), 'utf8'));
 await fs.mkdir(out('dist', 'ui'), { recursive: true });
 await fs.mkdir(out('extension'), { recursive: true });
 await fs.mkdir(out('plugins', 'codex-web-goal', 'dist'), { recursive: true });
@@ -39,7 +40,7 @@ for (const [name, { directory, manifest }] of [...packages].sort(([a], [b]) => a
 }
 await fs.writeFile(out('plugins/codex-web-goal/THIRD_PARTY_NOTICES.txt'), notices.join('\n'));
 await fs.writeFile(out('extension/manifest.json'), JSON.stringify({
-  manifest_version: 3, name: 'Codex Web Goal', version: '0.1.0', minimum_chrome_version: '120',
+  manifest_version: 3, name: 'Codex Web Goal', version: project.version, minimum_chrome_version: '120',
   description: 'Connect a selected ChatGPT conversation to your local Codex Goal. No cookies or private APIs.',
   permissions: ['storage', 'alarms', 'activeTab'],
   host_permissions: ['http://127.0.0.1/*', 'https://chatgpt.com/*'],

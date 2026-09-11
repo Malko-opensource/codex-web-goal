@@ -48,7 +48,20 @@ Separate instances need distinct state directories, bridge ports and App Server 
 
 ## Quick start
 
-### 1. Build and install the local Codex plugin
+### 1. Install the Codex plugin
+
+For a normal external installation, add this GitHub repository as a marketplace and install the plugin:
+
+```sh
+codex plugin marketplace add Malko-opensource/codex-web-goal --ref main
+codex plugin add codex-web-goal@codex-web-goal
+```
+
+The marketplace manifest is `.agents/plugins/marketplace.json`; it resolves the plugin manifest at
+`plugins/codex-web-goal/.codex-plugin/plugin.json`. The repository includes the self-contained MCP bundle,
+so marketplace installation does not run npm or build untrusted source. Restart Codex after installation.
+
+You still need the local bridge CLI. Until an npm package is published, clone and build it:
 
 ```sh
 git clone https://github.com/Malko-opensource/codex-web-goal.git
@@ -58,10 +71,9 @@ npm run build
 node dist/cli.js install-plugin
 ```
 
-Review the plugin and skill before installation. `install-plugin` registers this local checkout as a
-Codex marketplace and installs the plugin into your user configuration. Restart Codex afterwards.
-Building alone does not modify Codex settings. Re-register if you move the checkout.
-The Git source does not include generated bundles: **build before installing**. No npm or Chrome Web Store package is published.
+`install-plugin` switches your installation to this local checkout, which is useful while developing.
+Review the plugin and skill first. Building alone does not modify Codex settings; re-register if you move the checkout.
+No npm or Chrome Web Store package is published.
 
 ### 2. Start the local bridge
 

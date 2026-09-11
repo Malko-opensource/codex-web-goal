@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 // ZIP store method, portable and dependency-free; generated files only.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const project = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
 const table = Array.from({ length: 256 }, (_, n) => { for (let i = 0; i < 8; i++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1; return n >>> 0; });
 function crc(bytes) { let value = 0xffffffff; for (const byte of bytes) value = table[(value ^ byte) & 255] ^ (value >>> 8); return (value ^ 0xffffffff) >>> 0; }
 async function zip(directory, destination) {
@@ -25,7 +26,7 @@ async function zip(directory, destination) {
 }
 await fs.mkdir(path.join(root, 'release'), { recursive: true });
 const checksums = [];
-for (const [source, name] of [['extension','codex-web-goal-chrome-0.1.0.zip'],['plugins/codex-web-goal','codex-web-goal-plugin-0.1.0.zip']]) {
+for (const [source, name] of [['extension',`codex-web-goal-chrome-${project.version}.zip`],['plugins/codex-web-goal',`codex-web-goal-plugin-${project.version}.zip`]]) {
   const destination = path.join(root,'release',name); await zip(path.join(root,source),destination);
   checksums.push(createHash('sha256').update(await fs.readFile(destination)).digest('hex') + '  ' + name);
 }
